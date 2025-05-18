@@ -261,6 +261,7 @@ const AddMedication = () => {
           </Button>
         </VStack>
       </form>
+     {/* Add medication */}
     </Box>
   );
 };

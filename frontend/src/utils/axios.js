@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  // baseURL: 'https://medtrack-dwd1.onrender.com/api',
-  baseURL: 'http://localhost:8181/api',
+  baseURL: 'https://medtrack-1.onrender.com/api',
+  // baseURL: 'http://localhost:8181/api',
   headers: {
     'Content-Type': 'application/json',
   },
