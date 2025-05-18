@@ -82,18 +82,19 @@ router.post('/:id/take', [
       return res.status(404).json({ message: 'Dose not found' });
     }
 
-    // Check if dose is too late (more than 1 minute for testing)
+    // Check if dose is too late (more than 4 hours)
     const now = new Date();
-    const minutesLate = (now - dose.scheduledTime) / (1000 * 60);
-    if (minutesLate > 1) {
+    const hoursLate = (now - dose.scheduledTime) / (1000 * 60 * 60);
+    
+    if (hoursLate > 4) {
       return res.status(400).json({ 
-        message: 'Dose is too late (more than 1 minute)',
-        minutesLate
+        message: 'Dose is too late (more than 4 hours)',
+        hoursLate
       });
     }
 
     dose.takenTime = now;
-    dose.status = minutesLate > 0 ? 'late' : 'taken';
+    dose.status = hoursLate > 0 ? 'late' : 'taken';
     if (req.body.notes) {
       dose.notes = req.body.notes;
     }

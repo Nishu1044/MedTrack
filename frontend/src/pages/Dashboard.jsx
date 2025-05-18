@@ -12,8 +12,11 @@ import {
   StatNumber,
   StatHelpText,
   useToast,
+  Spinner,
+  Center,
 } from '@chakra-ui/react';
 import api from '../utils/axios';
+import { useAuth } from '../context/AuthContext';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -25,9 +28,12 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const toast = useToast();
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
     const fetchStats = async () => {
+      if (authLoading || !user) return;
+      
       try {
         const [medicationsRes, dosesRes, adherenceRes] = await Promise.all([
           api.get('/medications'),
@@ -54,7 +60,15 @@ const Dashboard = () => {
     };
 
     fetchStats();
-  }, [toast]);
+  }, [toast, authLoading, user]);
+
+  if (authLoading || loading) {
+    return (
+      <Center h="100vh">
+        <Spinner size="xl" />
+      </Center>
+    );
+  }
 
   return (
     <Box w="100vw" minH="100vh" bg="gray.50" display="flex" flexDirection="column" alignItems="center" overflowX="auto">
@@ -125,7 +139,7 @@ const Dashboard = () => {
               size={{ base: 'md', md: 'lg' }}
               w="full"
               fontSize={{ base: 'sm', md: 'md' }}
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/reports')}
             >
               View Reports
             </Button>

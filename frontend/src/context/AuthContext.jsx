@@ -10,11 +10,25 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      setUser(JSON.parse(localStorage.getItem('user')));
-    }
-    setLoading(false);
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      console.log('Initializing auth - Token:', token ? 'Present' : 'Missing');
+      console.log('Initializing auth - User:', storedUser ? 'Present' : 'Missing');
+      
+      if (token && storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (error) {
+          console.error('Error parsing stored user:', error);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        }
+      }
+      setLoading(false);
+    };
+
+    initializeAuth();
   }, []);
 
   const login = async (email, password) => {
@@ -24,11 +38,13 @@ export const AuthProvider = ({ children }) => {
         password,
       });
       const { token, user } = response.data;
+      console.log('Login successful - Token received:', token ? 'Yes' : 'No');
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
       setUser(user);
       return { success: true };
     } catch (error) {
+      console.error('Login error:', error);
       return {
         success: false,
         error: error.response?.data?.message || 'Login failed',
@@ -44,11 +60,13 @@ export const AuthProvider = ({ children }) => {
         name,
       });
       const { token, user } = response.data;
+      console.log('Signup successful - Token received:', token ? 'Yes' : 'No');
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
       setUser(user);
       return { success: true };
     } catch (error) {
+      console.error('Signup error:', error);
       return {
         success: false,
         error: error.response?.data?.message || 'Signup failed',
@@ -57,6 +75,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    console.log('Logging out - Clearing token and user');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);

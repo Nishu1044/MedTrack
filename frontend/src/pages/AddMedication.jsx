@@ -37,12 +37,8 @@ const AddMedication = () => {
   const toast = useToast();
 
   const handleTimeChange = (index, value) => {
-    // Ensure time is in 24-hour format with leading zeros
-    const [hours, minutes] = value.split(':');
-    const formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
-    
     const newTimes = [...formData.frequency.times];
-    newTimes[index] = formattedTime;
+    newTimes[index] = value;
     setFormData({
       ...formData,
       frequency: {
@@ -105,28 +101,18 @@ const AddMedication = () => {
     setLoading(true);
 
     try {
-      // Format all times to ensure 24-hour format with leading zeros
+      // Ensure times are in 24-hour format
       const formattedTimes = formData.frequency.times.map(time => {
         const [hours, minutes] = time.split(':');
         return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
       });
-
-      // Ensure start and end dates are in UTC
-      const startDate = new Date(formData.startDate);
-      const endDate = new Date(formData.endDate);
-      
-      // Set time to start of day for start date and end of day for end date
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
 
       const medicationData = {
         ...formData,
         frequency: {
           ...formData.frequency,
           times: formattedTimes
-        },
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString()
+        }
       };
 
       console.log('Submitting medication data:', medicationData);

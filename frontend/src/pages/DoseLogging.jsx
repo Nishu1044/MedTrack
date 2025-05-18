@@ -15,7 +15,6 @@ import {
   Badge
 } from '@chakra-ui/react';
 import api from '../utils/axios';
-import { FaCoins } from 'react-icons/fa';
 
 // Custom hook for in-app dose reminders
 function useDoseReminders() {
@@ -76,7 +75,6 @@ const DoseLogging = () => {
   const [doses, setDoses] = useState([]);
   const [medications, setMedications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [coins, setCoins] = useState(() => Number(localStorage.getItem('coins') || 0));
   const toast = useToast();
 
   // Move fetchData outside useEffect
@@ -119,24 +117,19 @@ const DoseLogging = () => {
   const handleMarkAsTaken = async (doseId) => {
     try {
       await api.post(`/doses/${doseId}/take`);
-      // Reward: +1 coin
-      const newCoins = coins + 1;
-      setCoins(newCoins);
-      localStorage.setItem('coins', newCoins);
       toast({
-        title: '+1 coin!',
-        description: 'Great job! Keep logging your doses.',
+        title: 'Success',
+        description: 'Dose marked as taken',
         status: 'success',
-        duration: 2000,
+        duration: 3000,
         isClosable: true,
-        icon: <FaCoins color="#FFD700" />,
       });
       fetchData();
       window.dispatchEvent(new Event('doseUpdated'));
     } catch (error) {
       console.error('Error marking dose as taken:', error);
       toast({
-        title: 'Warning',
+        title: 'Error',
         description: error.response?.data?.message || 'Failed to mark dose as taken',
         status: 'error',
         duration: 3000,
@@ -197,12 +190,8 @@ const DoseLogging = () => {
   }
 
   return (
-    <Box w="100vw" minH="100vh" bg="gray.50" display="flex" flexDirection="column" alignItems="center" overflowX="auto" p={0}>
-      <Box w="full" maxW={{ base: '100vw', md: '900px', xl: '1200px' }} p={0}>
-        <Box display="flex" alignItems="center" mb={4} gap={2}>
-          <FaCoins color="#FFD700" size={24} />
-          <Text fontWeight="bold" fontSize={{ base: 'md', md: 'lg' }}>Coins: {coins}</Text>
-        </Box>
+    <Box w="100vw" minH="100vh" bg="gray.50" display="flex" flexDirection="column" alignItems="center" overflowX="auto">
+      <Box w="full" maxW={{ base: '100vw', md: '900px', xl: '1200px' }} p={{ base: 1, sm: 2, md: 6 }}>
         <Heading size={{ base: 'md', md: 'lg' }} textAlign="center" mb={4}>Today's Doses</Heading>
         <VStack spacing={{ base: 2, md: 4 }} align="stretch">
           {doses.length === 0 ? (
