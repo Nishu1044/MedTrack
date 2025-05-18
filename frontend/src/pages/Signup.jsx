@@ -55,7 +55,7 @@ const Signup = () => {
           <VStack spacing={1} align={['center', 'flex-start']} w="full">
             <Heading>Sign Up</Heading>
             <Text>Create your account</Text>
-            <Text>Please use password more than 6 characters</Text>
+            <Text>Please use password more than 6 characters.</Text>
           </VStack>
 
           <FormControl>
