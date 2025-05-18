@@ -52,6 +52,7 @@ router.post('/', [
   body('dose').trim().notEmpty(),
   body('frequency.timesPerDay').isInt({ min: 1 }),
   body('frequency.times').isArray(),
+  body('frequency.times.*').matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Invalid time format. Use HH:MM in 24-hour format'),
   body('startDate').isISO8601(),
   body('endDate').isISO8601(),
   body('category').isIn(['Me', 'Mom', 'Dad', 'Other']),
@@ -68,14 +69,19 @@ router.post('/', [
       notes
     } = req.body;
 
+    // Validate that times array length matches timesPerDay
+    if (frequency.times.length !== frequency.timesPerDay) {
+      return res.status(400).json({ message: 'Number of times must match timesPerDay' });
+    }
+
     // Create medication
     const medication = new Medication({
       user: req.user._id,
       name,
       dose,
       frequency,
-      startDate,
-      endDate,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
       category,
       notes
     });
@@ -88,7 +94,7 @@ router.post('/', [
     const endDateTime = new Date(endDate);
     const now = new Date();
 
-    // Set time to start of day for date comparison in LOCAL time
+    // Set time to start of day for date comparison
     currentDate.setHours(0, 0, 0, 0);
     endDateTime.setHours(23, 59, 59, 999);
 
@@ -99,7 +105,6 @@ router.post('/', [
       for (const time of frequency.times) {
         const [hours, minutes] = time.split(':');
         const scheduledTime = new Date(currentDate);
-        // Set hours and minutes in LOCAL time
         scheduledTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
 
         // Only create doses for the current day and future
@@ -138,6 +143,7 @@ router.put('/:id', [
   body('dose').optional().trim().notEmpty(),
   body('frequency.timesPerDay').optional().isInt({ min: 1 }),
   body('frequency.times').optional().isArray(),
+  body('frequency.times.*').optional().matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Invalid time format. Use HH:MM in 24-hour format'),
   body('startDate').optional().isISO8601(),
   body('endDate').optional().isISO8601(),
   body('category').optional().isIn(['Me', 'Mom', 'Dad', 'Other']),
