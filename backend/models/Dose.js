@@ -27,15 +27,19 @@ const doseSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  reminderSentAt: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
 
-// Indexes for faster queries
 doseSchema.index({ user: 1, medication: 1, scheduledTime: 1 });
 doseSchema.index({ user: 1, status: 1 });
+doseSchema.index({ status: 1, scheduledTime: 1, reminderSentAt: 1 });
 
 // Method to check if dose is late (more than 4 hours)
 doseSchema.methods.isLate = function() {

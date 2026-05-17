@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const Dose = require('../models/Dose');
 const Medication = require('../models/Medication');
+const { dayRangeInZone, lastNDaysRangeInZone, localDateLabel } = require('../utils/timezone');
 
 // Middleware to validate request
 const validateRequest = (req, res, next) => {
@@ -34,34 +35,21 @@ router.get('/upcoming', auth, async (req, res) => {
   }
 });
 
-// Get today's doses
+// Get today's doses (in the user's timezone)
 router.get('/today', auth, async (req, res) => {
   try {
-    const today = new Date();
-    // Set to start of day in UTC
-    today.setUTCHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-
-    console.log('Fetching doses between:', today.toISOString(), 'and', tomorrow.toISOString());
+    const { start, end } = dayRangeInZone(req.user.timezone);
 
     const doses = await Dose.find({
       user: req.user._id,
-      scheduledTime: {
-        $gte: today,
-        $lt: tomorrow
-      }
+      scheduledTime: { $gte: start, $lte: end },
     })
-    .populate('medication')
-    .sort({ scheduledTime: 1 });
+      .populate('medication')
+      .sort({ scheduledTime: 1 });
 
-    // Filter out doses with missing medication
-    const validDoses = doses.filter(dose => dose.medication);
-    console.log('Found doses:', validDoses.length);
-
-    res.json(validDoses);
+    res.json(doses.filter((d) => d.medication));
   } catch (error) {
-    console.error('Get today\'s doses error:', error);
+    console.error("Get today's doses error:", error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -108,18 +96,14 @@ router.post('/:id/take', [
   }
 });
 
-// Get adherence statistics
+// Get adherence statistics (today, in the user's timezone)
 router.get('/stats', auth, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(today);
-    endOfToday.setHours(23, 59, 59, 999);
+    const { start, end } = dayRangeInZone(req.user.timezone);
 
-    // Get all doses for the user scheduled for today
     const doses = await Dose.find({
       user: req.user._id,
-      scheduledTime: { $gte: today, $lte: endOfToday }
+      scheduledTime: { $gte: start, $lte: end }
     }).populate({
       path: 'medication',
       select: 'name _id'
@@ -194,18 +178,12 @@ router.get('/medication/:medicationId/stats', auth, async (req, res) => {
       return res.status(404).json({ message: 'Medication not found' });
     }
 
-    // Calculate date range: last 30 days including all of today
-    const now = new Date();
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-    const thirtyDaysAgo = new Date(endOfToday);
-    thirtyDaysAgo.setDate(endOfToday.getDate() - 29); // 30 days including today
+    const { start, end } = lastNDaysRangeInZone(req.user.timezone, 30);
 
-    // Get all doses for this medication in the last 30 days (including all of today)
     const doses = await Dose.find({
       user: req.user._id,
       medication: medication._id,
-      scheduledTime: { $gte: thirtyDaysAgo, $lte: endOfToday }
+      scheduledTime: { $gte: start, $lte: end }
     });
 
     // Calculate statistics (count both 'taken' and 'late' as taken)
@@ -233,35 +211,34 @@ router.get('/medication/:medicationId/stats', auth, async (req, res) => {
   }
 });
 
-// Calendar heatmap data endpoint
+// Calendar heatmap data (last 30 days bucketed by the user's local calendar date)
 router.get('/calendar', auth, async (req, res) => {
   try {
-    const today = new Date();
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const tz = req.user.timezone || 'UTC';
+    const { start, end } = lastNDaysRangeInZone(tz, 30);
 
-    // Get all doses for the user in the current month
     const doses = await Dose.find({
       user: req.user._id,
-      scheduledTime: { $gte: monthStart, $lte: monthEnd }
+      scheduledTime: { $gte: start, $lte: end },
     });
 
-    // Group doses by date
     const dayMap = {};
-    for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
-      dayMap[dateStr] = { date: dateStr, missed: 0, taken: 0, total: 0 };
+    // Seed every day in the range
+    for (let i = 0; i < 30; i++) {
+      const { start: dayStart } = dayRangeInZone(tz, -(29 - i));
+      const label = localDateLabel(dayStart, tz);
+      dayMap[label] = { date: label, missed: 0, taken: 0, total: 0 };
     }
-    doses.forEach(dose => {
-      const dateStr = new Date(dose.scheduledTime).toISOString().split('T')[0];
-      if (dayMap[dateStr]) {
-        dayMap[dateStr].total++;
-        if (dose.status === 'missed') dayMap[dateStr].missed++;
-        if (dose.status === 'taken' || dose.status === 'late') dayMap[dateStr].taken++;
+    doses.forEach((dose) => {
+      const label = localDateLabel(dose.scheduledTime, tz);
+      if (dayMap[label]) {
+        dayMap[label].total++;
+        if (dose.status === 'missed') dayMap[label].missed++;
+        if (dose.status === 'taken' || dose.status === 'late') dayMap[label].taken++;
       }
     });
-    const result = Object.values(dayMap);
-    res.json(result);
+
+    res.json(Object.values(dayMap));
   } catch (error) {
     console.error('Calendar heatmap error:', error);
     res.status(500).json({ message: 'Server error' });

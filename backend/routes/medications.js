@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const Medication = require('../models/Medication');
 const Dose = require('../models/Dose');
+const { buildScheduledTime } = require('../utils/timezone');
 
 // Middleware to validate request
 const validateRequest = (req, res, next) => {
@@ -82,47 +83,30 @@ router.post('/', [
 
     await medication.save();
 
-    // Create initial doses
+    const zone = req.user.timezone || 'UTC';
     const doses = [];
-    const currentDate = new Date(startDate);
-    const endDateTime = new Date(endDate);
     const now = new Date();
+    const endDateUTC = new Date(endDate);
 
-    // Set time to start of day for date comparison in LOCAL time
-    currentDate.setHours(0, 0, 0, 0);
-    endDateTime.setHours(23, 59, 59, 999);
-
-    console.log('Creating doses from:', currentDate.toISOString(), 'to', endDateTime.toISOString());
-    console.log('Times per day:', frequency.times);
-
-    while (currentDate <= endDateTime) {
+    // Iterate days from startDate to endDate (inclusive). Each iteration represents
+    // one calendar day in the user's timezone.
+    let cursor = new Date(startDate);
+    while (cursor <= endDateUTC) {
       for (const time of frequency.times) {
-        const [hours, minutes] = time.split(':');
-        const scheduledTime = new Date(currentDate);
-        // Set hours and minutes in LOCAL time
-        scheduledTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-
-        // Only create doses for the current day and future
+        const scheduledTime = buildScheduledTime(cursor, time, zone);
         if (scheduledTime >= now) {
           doses.push({
             user: req.user._id,
             medication: medication._id,
             scheduledTime,
-            status: 'scheduled'
+            status: 'scheduled',
           });
-          console.log(`Created dose for ${name} at ${scheduledTime.toISOString()}`);
         }
       }
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
-    if (doses.length > 0) {
-      await Dose.insertMany(doses);
-      console.log(`Created ${doses.length} doses for medication ${name}`);
-    } else {
-      console.log('No doses were created - check if dates are in the future');
-    }
+    if (doses.length > 0) await Dose.insertMany(doses);
 
     res.status(201).json(medication);
   } catch (error) {
@@ -161,49 +145,36 @@ router.put('/:id', [
     Object.assign(medication, req.body);
     await medication.save();
 
-    // If times are updated, update future doses
     if (isTimeUpdated) {
+      const zone = req.user.timezone || 'UTC';
       const now = new Date();
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const endDateTime = new Date(medication.endDate);
-      endDateTime.setHours(23, 59, 59, 999);
+      const endDateUTC = new Date(medication.endDate);
 
-      // Delete future scheduled doses
       await Dose.deleteMany({
         medication: medication._id,
         user: req.user._id,
         scheduledTime: { $gte: now },
-        status: 'scheduled'
+        status: 'scheduled',
       });
 
-      // Create new doses with updated times
       const doses = [];
-      const currentDate = new Date(today); // Start from today
-
-      while (currentDate <= endDateTime) {
+      let cursor = new Date(now);
+      while (cursor <= endDateUTC) {
         for (const time of medication.frequency.times) {
-          const [hours, minutes] = time.split(':');
-          const scheduledTime = new Date(currentDate);
-          scheduledTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-
-          // Only skip doses for days before today
-          if (scheduledTime >= today) {
+          const scheduledTime = buildScheduledTime(cursor, time, zone);
+          if (scheduledTime >= now) {
             doses.push({
               user: req.user._id,
               medication: medication._id,
               scheduledTime,
-              status: 'scheduled'
+              status: 'scheduled',
             });
           }
         }
-        currentDate.setDate(currentDate.getDate() + 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
 
-      if (doses.length > 0) {
-        await Dose.insertMany(doses);
-        console.log(`Updated ${doses.length} future doses for medication ${medication.name}`);
-      }
+      if (doses.length > 0) await Dose.insertMany(doses);
     }
 
     res.json(medication);
@@ -237,9 +208,7 @@ router.delete('/:id', auth, async (req, res) => {
       user: req.user._id
     });
 
-    console.log(`Completely deleted medication ${medication.name} and all associated doses from database`);
-
-    res.json({ message: 'Medication and associated doses completely deleted from database' });
+    res.json({ message: 'Medication and associated doses deleted' });
   } catch (error) {
     console.error('Delete medication error:', error);
     res.status(500).json({ message: 'Server error' });

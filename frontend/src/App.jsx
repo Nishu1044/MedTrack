@@ -1,5 +1,6 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
-import { ChakraProvider, Box, Flex, Button, useDisclosure } from '@chakra-ui/react';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { ChakraProvider, ColorModeScript, Box, Flex, Button, Text, useDisclosure, useColorModeValue } from '@chakra-ui/react';
+import theme from './theme';
 import {
   Drawer,
   DrawerBody,
@@ -23,10 +24,50 @@ import DoseLogging from './pages/DoseLogging';
 import AdherenceDashboard from './pages/AdherenceDashboard';
 import Reports from './pages/Reports';
 import EditMedication from './pages/EditMedication';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import Settings from './pages/Settings';
+import NotFound from './pages/NotFound';
+
+const Logo = () => {
+  const gradient = useColorModeValue(
+    'linear(135deg, brand.700, accent.cyan)',
+    'linear(135deg, brand.300, accent.cyan)'
+  );
+  return (
+    <Flex align="center" gap={2}>
+      <Box
+        w="36px"
+        h="36px"
+        borderRadius="xl"
+        bgGradient="linear(135deg, brand.400, accent.cyan)"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        boxShadow="0 4px 14px rgba(139, 92, 246, 0.4)"
+      >
+        <Text fontFamily="'Orbitron', sans-serif" fontWeight="800" color="white" fontSize="lg">
+          M
+        </Text>
+      </Box>
+      <Text
+        fontFamily="'Orbitron', sans-serif"
+        fontWeight="700"
+        fontSize={{ base: 'lg', md: 'xl' }}
+        bgGradient={gradient}
+        bgClip="text"
+        letterSpacing="0.05em"
+      >
+        MEDTRACK
+      </Text>
+    </Flex>
+  );
+};
 
 const Layout = ({ children }) => {
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
+  const location = useLocation();
 
   const menuItems = [
     { label: 'Dashboard', path: '/dashboard' },
@@ -34,7 +75,15 @@ const Layout = ({ children }) => {
     { label: 'Log Doses', path: '/doses' },
     { label: 'Adherence', path: '/adherence' },
     { label: 'Reports', path: '/reports' },
+    { label: 'Settings', path: '/settings' },
   ];
+
+  const isActive = (path) => location.pathname === path;
+  const activeBg = useColorModeValue('rgba(139, 92, 246, 0.12)', 'rgba(255, 255, 255, 0.12)');
+  const activeColor = useColorModeValue('brand.700', 'gray.50');
+  const inactiveColor = useColorModeValue('gray.700', 'gray.200');
+  const drawerBg = useColorModeValue('rgba(255, 255, 255, 0.95)', 'rgba(20, 20, 26, 0.95)');
+  const drawerBorder = useColorModeValue('rgba(255,255,255,0.6)', 'rgba(255,255,255,0.10)');
 
   return (
     <Box minH="100vh" w="100%">
@@ -42,28 +91,32 @@ const Layout = ({ children }) => {
         as="nav"
         align="center"
         justify="space-between"
-        wrap="wrap"
-        padding={{ base: 4, md: 6 }}
-        bg="blue.500"
-        color="white"
-        w="100%"
-        overflowX="auto"
+        position="sticky"
+        top={0}
+        zIndex={10}
+        px={{ base: 4, md: 8 }}
+        py={3}
+        className="glass-strong"
       >
-        <Button
-          display={{ base: 'block', md: 'none' }}
-          onClick={onOpen}
-          variant="ghost"
-          color="white"
-          size="sm"
-        >
-          <HamburgerIcon />
-        </Button>
+        <Flex align="center" gap={4} flex="1">
+          <Button
+            display={{ base: 'inline-flex', md: 'none' }}
+            onClick={onOpen}
+            variant="ghost"
+            size="sm"
+            aria-label="Open menu"
+          >
+            <HamburgerIcon />
+          </Button>
+          <Logo />
+        </Flex>
 
-        <Box
+        <Flex
           display={{ base: 'none', md: 'flex' }}
-          width={{ base: 'full', md: 'auto' }}
-          alignItems="center"
-          flexGrow={1}
+          align="center"
+          gap={1}
+          flex="2"
+          justify="center"
         >
           {menuItems.map((item) => (
             <Button
@@ -71,33 +124,44 @@ const Layout = ({ children }) => {
               as={Link}
               to={item.path}
               variant="ghost"
-              color="white"
-              mr={4}
-              fontSize={{ base: 'sm', md: 'md' }}
+              size="sm"
+              fontFamily="'Rajdhani', sans-serif"
+              fontWeight="600"
+              letterSpacing="0.05em"
+              color={isActive(item.path) ? activeColor : inactiveColor}
+              bg={isActive(item.path) ? activeBg : 'transparent'}
+              _hover={{ bg: activeBg, color: activeColor }}
             >
               {item.label}
             </Button>
           ))}
-        </Box>
+        </Flex>
 
-        <Button 
-          variant="ghost" 
-          color="white" 
-          onClick={logout}
-          size={{ base: 'sm', md: 'md' }}
-          display={{ base: 'none', md: 'inline-flex' }}
-        >
-          Logout
-        </Button>
+        <Flex flex="1" justify="flex-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={logout}
+            display={{ base: 'none', md: 'inline-flex' }}
+          >
+            Logout
+          </Button>
+        </Flex>
       </Flex>
 
       <Drawer isOpen={isOpen} placement="left" onClose={onClose}>
-        <DrawerOverlay />
-        <DrawerContent>
+        <DrawerOverlay backdropFilter="blur(6px)" bg="rgba(0,0,0,0.4)" />
+        <DrawerContent
+          bg={drawerBg}
+          backdropFilter="blur(20px) saturate(180%)"
+          borderRight={`1px solid ${drawerBorder}`}
+        >
           <DrawerCloseButton />
-          <DrawerHeader>Menu</DrawerHeader>
+          <DrawerHeader>
+            <Logo />
+          </DrawerHeader>
           <DrawerBody>
-            <Flex direction="column">
+            <Flex direction="column" gap={2}>
               {menuItems.map((item) => (
                 <Button
                   key={item.path}
@@ -105,8 +169,11 @@ const Layout = ({ children }) => {
                   to={item.path}
                   variant="ghost"
                   justifyContent="flex-start"
-                  mb={2}
-                  size={{ base: 'sm', md: 'md' }}
+                  size="md"
+                  fontFamily="'Rajdhani', sans-serif"
+                  fontWeight="600"
+                  color={isActive(item.path) ? activeColor : inactiveColor}
+                  bg={isActive(item.path) ? activeBg : 'transparent'}
                   onClick={onClose}
                 >
                   {item.label}
@@ -115,9 +182,7 @@ const Layout = ({ children }) => {
               <Button
                 mt={4}
                 colorScheme="red"
-                variant="solid"
                 onClick={() => { logout(); onClose(); }}
-                display={{ base: 'block', md: 'none' }}
               >
                 Logout
               </Button>
@@ -144,6 +209,8 @@ const AppRoutes = () => {
         path="/signup"
         element={user ? <Navigate to="/dashboard" /> : <Signup />}
       />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         path="/"
         element={
@@ -224,13 +291,24 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Settings />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };
 
 const App = () => {
   return (
-    <ChakraProvider>
+    <ChakraProvider theme={theme}>
       <AuthProvider>
         <Router>
           <AppRoutes />

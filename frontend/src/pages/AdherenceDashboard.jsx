@@ -6,6 +6,12 @@ import {
   GridItem,
   Text,
   Select,
+  Flex,
+  HStack,
+  VStack,
+  Icon,
+  SimpleGrid,
+  useColorModeValue,
   useToast,
 } from '@chakra-ui/react';
 import {
@@ -15,19 +21,23 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import api from '../utils/axios';
-import CalendarHeatmap from 'react-calendar-heatmap';
-import 'react-calendar-heatmap/dist/styles.css';
+import {
+  FaChartLine,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaPills,
+  FaCalendarCheck,
+} from 'react-icons/fa';
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isAfter, isToday } from 'date-fns';
 
 const getDayColor = (day, today) => {
-  if (isAfter(new Date(day.date), today)) return 'grey'; // Future
-  if (day.missed > 0) return 'red'; // At least one missed
-  if (day.taken > 0 && day.missed === 0) return 'green'; // At least one taken, none missed
-  return 'grey'; // No doses or not taken
+  if (isAfter(new Date(day.date), today)) return 'future';
+  if (day.missed > 0) return 'missed';
+  if (day.taken > 0 && day.missed === 0) return 'taken';
+  return 'empty';
 };
 
 const CalendarHeatmapComponent = ({ data }) => {
@@ -36,63 +46,116 @@ const CalendarHeatmapComponent = ({ data }) => {
   const monthEnd = endOfMonth(today);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-  // Map data by date for quick lookup
   const dataMap = {};
-  data.forEach(day => { dataMap[day.date] = day; });
+  data.forEach((day) => { dataMap[day.date] = day; });
 
-  console.log('calendarData', data);
+  const colors = {
+    taken: 'linear-gradient(135deg, #10b981, #6ee7b7)',
+    missed: 'linear-gradient(135deg, #ef4444, #f472b6)',
+    empty: 'rgba(167, 139, 250, 0.15)',
+    future: 'rgba(148, 163, 184, 0.12)',
+  };
 
   return (
-    <Box mb={8}>
-      <Heading size="sm" mb={2}>Adherence Calendar</Heading>
-      <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" gap={1}>
-        {/* Weekday headers */}
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-          <Text key={d} fontSize="xs" textAlign="center" color="gray.500">{d}</Text>
+    <Box>
+      <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" gap={1.5} maxW="320px">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+          <Text key={i} fontSize="xs" textAlign="center" color="gray.500" fontWeight="600">
+            {d}
+          </Text>
         ))}
-        {/* Calendar days */}
         {(() => {
           const firstDay = daysInMonth[0].getDay();
           const blanks = Array.from({ length: firstDay });
           return [
-            ...blanks.map((_, i) => <Box key={"blank-"+i} />),
+            ...blanks.map((_, i) => <Box key={`blank-${i}`} />),
             ...daysInMonth.map((dateObj) => {
               const dateStr = format(dateObj, 'yyyy-MM-dd');
               const dayData = dataMap[dateStr] || { date: dateStr, missed: 0, taken: 0, total: 0 };
-              const color = getDayColor(dayData, today);
-              let bg;
-              if (color === 'green') bg = '#4caf50';
-              else if (color === 'red') bg = '#e53935';
-              else bg = '#eee';
+              const type = getDayColor(dayData, today);
               return (
                 <Box
                   key={dateStr}
-                  w={6} h={6}
+                  aspectRatio="1"
                   borderRadius="md"
-                  bg={bg}
-                  border={isToday(dateObj) ? '2px solid #222' : '1px solid #ccc'}
+                  bg={type === 'taken' || type === 'missed' ? 'transparent' : colors[type]}
+                  bgGradient={type === 'taken' || type === 'missed' ? colors[type] : undefined}
+                  border={isToday(dateObj) ? '2px solid' : '1px solid rgba(167, 139, 250, 0.2)'}
+                  borderColor={isToday(dateObj) ? 'brand.500' : undefined}
                   display="flex"
                   alignItems="center"
                   justifyContent="center"
                   fontSize="xs"
-                  color="#222"
+                  fontWeight="700"
+                  color={type === 'taken' || type === 'missed' ? 'white' : 'gray.500'}
                   title={`${dateStr}\nTaken: ${dayData.taken}/${dayData.total}${dayData.missed > 0 ? ' (Missed)' : ''}`}
+                  cursor="default"
+                  transition="transform 0.15s"
+                  _hover={{ transform: 'scale(1.1)' }}
                 >
                   {dateObj.getDate()}
                 </Box>
               );
-            })
+            }),
           ];
         })()}
       </Box>
-      <Box mt={2} display="flex" alignItems="center" gap={2} fontSize="xs">
-        <Box w={4} h={4} bg="#4caf50" borderRadius="md" border="1px solid #ccc" /> Green: All taken
-        <Box w={4} h={4} bg="#e53935" borderRadius="md" border="1px solid #ccc" ml={2}/> Red: Missed
-        <Box w={4} h={4} bg="#eee" borderRadius="md" border="1px solid #ccc" ml={2}/> Grey: No doses/future
-      </Box>
+
+      <HStack mt={4} spacing={4} fontSize="xs" color="gray.500" flexWrap="wrap">
+        <HStack>
+          <Box w={3} h={3} borderRadius="sm" bgGradient="linear(135deg, #10b981, #6ee7b7)" />
+          <Text>Taken</Text>
+        </HStack>
+        <HStack>
+          <Box w={3} h={3} borderRadius="sm" bgGradient="linear(135deg, #ef4444, #f472b6)" />
+          <Text>Missed</Text>
+        </HStack>
+        <HStack>
+          <Box w={3} h={3} borderRadius="sm" bg="rgba(167, 139, 250, 0.15)" border="1px solid rgba(167, 139, 250, 0.2)" />
+          <Text>No doses</Text>
+        </HStack>
+      </HStack>
     </Box>
   );
 };
+
+const StatCard = ({ icon, label, value, gradient }) => (
+  <Box className="glass-card" p={{ base: 4, md: 5 }}>
+    <Flex justify="space-between" align="center" gap={3}>
+      <Box flex="1" minW={0}>
+        <Text
+          fontSize="xs"
+          fontFamily="'Rajdhani', sans-serif"
+          fontWeight="600"
+          letterSpacing="0.1em"
+          textTransform="uppercase"
+          color="gray.500"
+        >
+          {label}
+        </Text>
+        <Heading
+          fontSize={{ base: '2xl', md: '3xl' }}
+          mt={1}
+          bgGradient={gradient}
+          bgClip="text"
+        >
+          {value}
+        </Heading>
+      </Box>
+      <Flex
+        w="44px"
+        h="44px"
+        borderRadius="xl"
+        bgGradient={gradient}
+        align="center"
+        justify="center"
+        flexShrink={0}
+      >
+        <Icon as={icon} boxSize={5} color="white" />
+      </Flex>
+    </Flex>
+  </Box>
+);
 
 const AdherenceDashboard = () => {
   const [stats, setStats] = useState({
@@ -106,42 +169,34 @@ const AdherenceDashboard = () => {
   const [selectedMedication, setSelectedMedication] = useState('all');
   const [medications, setMedications] = useState([]);
   const [calendarData, setCalendarData] = useState([]);
-  const [calendarStart, setCalendarStart] = useState('');
-  const [calendarEnd, setCalendarEnd] = useState('');
   const toast = useToast();
+
+  const chartAxisColor = useColorModeValue('#64748b', '#cbd5e1');
+  const chartGridColor = useColorModeValue('rgba(167, 139, 250, 0.2)', 'rgba(167, 139, 250, 0.15)');
+  const tooltipBg = useColorModeValue('rgba(255,255,255,0.95)', 'rgba(15,18,50,0.95)');
 
   useEffect(() => {
     fetchData();
-    // Fetch calendar data
     const fetchCalendar = async () => {
       try {
         const res = await api.get('/doses/calendar');
         setCalendarData(res.data);
-        if (res.data.length > 0) {
-          setCalendarStart(res.data[0].date);
-          setCalendarEnd(res.data[res.data.length - 1].date);
-        }
-      } catch (error) {
-        toast({
-          title: 'Error fetching calendar data',
-          status: 'error',
-          duration: 3000,
-          isClosable: true,
-        });
+        const last7 = res.data.slice(-7);
+        const weekly = last7.map((day) => ({
+          date: format(new Date(day.date), 'EEE'),
+          adherence: day.total > 0 ? Math.round((day.taken / day.total) * 100) : 0,
+        }));
+        setWeeklyData(weekly);
+      } catch {
+        toast({ title: 'Failed to fetch calendar data', status: 'error', duration: 3000, isClosable: true });
       }
     };
     fetchCalendar();
 
-    // Listen for dose updates
-    const handleDoseUpdate = () => {
-      fetchData();
-      fetchCalendar();
-    };
-    window.addEventListener('doseUpdated', handleDoseUpdate);
-    return () => {
-      window.removeEventListener('doseUpdated', handleDoseUpdate);
-    };
-  }, [selectedMedication, toast]);
+    const handler = () => { fetchData(); fetchCalendar(); };
+    window.addEventListener('doseUpdated', handler);
+    return () => window.removeEventListener('doseUpdated', handler);
+  }, [selectedMedication]);
 
   const fetchData = async () => {
     try {
@@ -153,124 +208,147 @@ const AdherenceDashboard = () => {
         ),
         api.get('/medications'),
       ]);
-
       setStats(statsRes.data);
       setMedications(medicationsRes.data);
-
-      // Generate weekly data
-      const today = new Date();
-      const weekAgo = new Date(today);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-
-      const weeklyStats = [];
-      for (let i = 0; i < 7; i++) {
-        const date = new Date(weekAgo);
-        date.setDate(date.getDate() + i);
-        weeklyStats.push({
-          date: date.toLocaleDateString('en-US', { weekday: 'short' }),
-          adherence: Math.round(Math.random() * 100), // Replace with actual data
-        });
-      }
-      setWeeklyData(weeklyStats);
-    } catch (error) {
-      toast({
-        title: 'Error fetching adherence data',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
+    } catch {
+      toast({ title: 'Failed to fetch adherence data', status: 'error', duration: 3000, isClosable: true });
     }
   };
 
   return (
-    <Box w="100vw" minH="100vh" bg="gray.50" display="flex" flexDirection="column" alignItems="center" overflowX="auto">
-      <Box w="full" maxW={{ base: '100vw', md: '900px', xl: '1200px' }} p={{ base: 1, sm: 2, md: 6 }}>
-        <Heading mb={4} fontSize={{ base: 'xl', md: '2xl', lg: '3xl' }} textAlign="center">Adherence Dashboard</Heading>
-        {/* Calendar Heatmap for current month */}
-        <CalendarHeatmapComponent data={calendarData} />
-        <Box display="flex" flexDirection={{ base: 'column', md: 'row' }} alignItems="flex-start" justifyContent="center" gap={{ base: 2, md: 6 }} w="full">
-          {/* Weekly Adherence Chart */}
-          <Box flex="1" minW={0} height={{ base: '180px', md: '220px' }} w="full">
-            <Heading size="sm" mb={2}>Weekly Adherence</Heading>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: '12px', padding: '8px' }} />
-                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
-                <Bar dataKey="adherence" name="Adherence %" fill="#4299E1" />
-              </BarChart>
-            </ResponsiveContainer>
+    <Box w="full" maxW="1200px" mx="auto" px={{ base: 4, md: 6 }} py={{ base: 6, md: 8 }}>
+      {/* Hero */}
+      <Box className="glass-card" p={{ base: 5, md: 6 }} mb={6} position="relative" overflow="hidden">
+        <Icon
+          as={FaChartLine}
+          position="absolute"
+          right={{ base: '-10px', md: '20px' }}
+          top="10px"
+          boxSize={{ base: '90px', md: '120px' }}
+          color="brand.300"
+          opacity={0.18}
+          transform="rotate(15deg)"
+        />
+        <Flex align="center" gap={4} position="relative" zIndex={1}>
+          <Flex
+            w={{ base: '52px', md: '64px' }}
+            h={{ base: '52px', md: '64px' }}
+            borderRadius="2xl"
+            bgGradient="linear(135deg, #10b981, accent.mint)"
+            align="center"
+            justify="center"
+            boxShadow="0 8px 24px rgba(16, 185, 129, 0.4)"
+          >
+            <Icon as={FaChartLine} boxSize={{ base: 6, md: 7 }} color="white" />
+          </Flex>
+          <Box>
+            <Heading
+              fontSize={{ base: 'xl', md: '2xl' }}
+              bgGradient="linear(135deg, #10b981, accent.cyan)"
+              bgClip="text"
+            >
+              Adherence Dashboard
+            </Heading>
+            <Text fontSize="sm" color="gray.500" mt={1}>
+              Track how consistently you're taking your meds.
+            </Text>
           </Box>
-        </Box>
-      <Select
-        value={selectedMedication}
-        onChange={(e) => setSelectedMedication(e.target.value)}
-          mb={{ base: 4, md: 8 }}
-        maxW={{ base: 'full', md: '300px' }}
-        size={{ base: 'sm', md: 'md' }}
-      >
-        <option value="all">All Medications</option>
-        {medications.map((med) => (
-          <option key={med._id} value={med._id}>
-            {med.name}
-          </option>
-        ))}
-      </Select>
-      <Grid 
-        templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }} 
-          gap={{ base: 2, md: 6 }} 
-          mb={{ base: 4, md: 8 }}
-          w="full"
-      >
+        </Flex>
+      </Box>
+
+      {/* Filter */}
+      <HStack mb={5} maxW={{ base: 'full', md: '320px' }}>
+        <Select value={selectedMedication} onChange={(e) => setSelectedMedication(e.target.value)} size="md">
+          <option value="all">All Medications</option>
+          {medications.map((med) => (
+            <option key={med._id} value={med._id}>
+              {med.name}
+            </option>
+          ))}
+        </Select>
+      </HStack>
+
+      {/* Stats grid */}
+      <SimpleGrid columns={{ base: 2, md: 4 }} spacing={{ base: 3, md: 4 }} mb={6}>
+        <StatCard
+          icon={FaChartLine}
+          label="Adherence"
+          value={`${stats.adherenceRate}%`}
+          gradient="linear(135deg, brand.500, accent.cyan)"
+        />
+        <StatCard
+          icon={FaPills}
+          label="Total Doses"
+          value={stats.totalDoses}
+          gradient="linear(135deg, #06b6d4, brand.400)"
+        />
+        <StatCard
+          icon={FaCheckCircle}
+          label="Taken"
+          value={stats.takenDoses}
+          gradient="linear(135deg, #10b981, #6ee7b7)"
+        />
+        <StatCard
+          icon={FaTimesCircle}
+          label="Missed"
+          value={stats.missedDoses}
+          gradient="linear(135deg, #ef4444, #f472b6)"
+        />
+      </SimpleGrid>
+
+      {/* Charts row */}
+      <Grid templateColumns={{ base: '1fr', lg: '1fr 1fr' }} gap={{ base: 4, md: 6 }}>
         <GridItem>
-          <Box p={{ base: 3, md: 4 }} shadow="md" borderWidth="1px" borderRadius="lg">
-            <Text fontSize={{ base: 'sm', md: 'md' }} color="gray.500">
-              Adherence Rate
-            </Text>
-            <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="bold">
-              {stats.adherenceRate}%
-            </Text>
+          <Box className="glass-card" p={{ base: 4, md: 6 }}>
+            <HStack mb={4}>
+              <Icon as={FaCalendarCheck} color="brand.500" />
+              <Heading size="sm" fontFamily="'Rajdhani', sans-serif" letterSpacing="0.05em">
+                MONTHLY CALENDAR
+              </Heading>
+            </HStack>
+            <CalendarHeatmapComponent data={calendarData} />
           </Box>
         </GridItem>
 
         <GridItem>
-          <Box p={{ base: 3, md: 4 }} shadow="md" borderWidth="1px" borderRadius="lg">
-            <Text fontSize={{ base: 'sm', md: 'md' }} color="gray.500">
-              Total Doses
-            </Text>
-            <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="bold">
-              {stats.totalDoses}
-            </Text>
-          </Box>
-        </GridItem>
-
-        <GridItem>
-          <Box p={{ base: 3, md: 4 }} shadow="md" borderWidth="1px" borderRadius="lg">
-            <Text fontSize={{ base: 'sm', md: 'md' }} color="gray.500">
-              Taken Doses
-            </Text>
-            <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="bold" color="green.500">
-              {stats.takenDoses}
-            </Text>
-          </Box>
-        </GridItem>
-
-        <GridItem>
-          <Box p={{ base: 3, md: 4 }} shadow="md" borderWidth="1px" borderRadius="lg">
-            <Text fontSize={{ base: 'sm', md: 'md' }} color="gray.500">
-              Missed Doses
-            </Text>
-            <Text fontSize={{ base: 'xl', md: '2xl' }} fontWeight="bold" color="red.500">
-              {stats.missedDoses}
-            </Text>
+          <Box className="glass-card" p={{ base: 4, md: 6 }}>
+            <HStack mb={4}>
+              <Icon as={FaChartLine} color="brand.500" />
+              <Heading size="sm" fontFamily="'Rajdhani', sans-serif" letterSpacing="0.05em">
+                WEEKLY ADHERENCE
+              </Heading>
+            </HStack>
+            <Box h="240px">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={weeklyData}>
+                  <defs>
+                    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#8b5cf6" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#22d3ee" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: chartAxisColor }} stroke={chartAxisColor} />
+                  <YAxis tick={{ fontSize: 11, fill: chartAxisColor }} stroke={chartAxisColor} />
+                  <Tooltip
+                    contentStyle={{
+                      background: tooltipBg,
+                      border: '1px solid rgba(167,139,250,0.3)',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      padding: '8px 12px',
+                    }}
+                    labelStyle={{ color: chartAxisColor, fontWeight: 600 }}
+                  />
+                  <Bar dataKey="adherence" name="Adherence %" fill="url(#barGradient)" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
           </Box>
         </GridItem>
       </Grid>
-      </Box>
     </Box>
   );
 };
 
-export default AdherenceDashboard; 
+export default AdherenceDashboard;

@@ -1,151 +1,188 @@
-const cron = require('node-cron');
+const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const Dose = require('../models/Dose');
-const Medication = require('../models/Medication');
 
-class ReminderService {
-  constructor() {
-    // Check for upcoming doses every minute
-    this.scheduler = cron.schedule('* * * * *', this.checkUpcomingDoses.bind(this));
-  }
+// =============================================================
+// Dual-provider email support:
+//   - Gmail SMTP (set EMAIL_USER + EMAIL_APP_PASSWORD)  ← primary
+//   - Resend     (set RESEND_API_KEY)                    ← fallback / future
+// If both are set, Resend wins.
+// =============================================================
 
-  async checkUpcomingDoses() {
-    try {
-      const now = new Date();
-      const fifteenMinutesFromNow = new Date(now.getTime() + 15 * 60000);
+const REMINDER_WINDOW_MINUTES = 15;
 
-      // Find doses scheduled in the next 15 minutes
-      const upcomingDoses = await Dose.find({
-        scheduledTime: {
-          $gte: now,
-          $lte: fifteenMinutesFromNow
-        },
-        status: 'scheduled'
-      })
-      .populate('medication')
-      .populate('user');
-
-      for (const dose of upcomingDoses) {
-        // Here you would implement the actual notification logic
-        // For example, sending push notifications, emails, or SMS
-        console.log(`Reminder: ${dose.user.name} needs to take ${dose.medication.name} at ${dose.scheduledTime}`);
-        
-        // TODO: Implement actual notification sending
-        // await this.sendNotification(dose);
-      }
-    } catch (error) {
-      console.error('Error checking upcoming doses:', error);
-    }
-  }
-
-  // Method to send notifications (to be implemented based on notification preferences)
-  async sendNotification(dose) {
-    // This is a placeholder for the actual notification implementation
-    // You could integrate with:
-    // - Push notification services (Firebase, OneSignal, etc.)
-    // - Email services (SendGrid, AWS SES, etc.)
-    // - SMS services (Twilio, etc.)
-    // - Calendar integration (Google Calendar API)
-  }
-
-  // Method to schedule a new dose
-  async scheduleDose(medication, scheduledTime) {
-    try {
-      const dose = new Dose({
-        user: medication.user,
-        medication: medication._id,
-        scheduledTime,
-        status: 'scheduled'
-      });
-
-      await dose.save();
-      return dose;
-    } catch (error) {
-      console.error('Error scheduling dose:', error);
-      throw error;
-    }
-  }
-
-  // Method to schedule all doses for a new medication
-  async scheduleMedicationDoses(medication) {
-    try {
-      const doses = [];
-      const currentDate = new Date(medication.startDate);
-      const endDateTime = new Date(medication.endDate);
-
-      while (currentDate <= endDateTime) {
-        for (const time of medication.frequency.times) {
-          const [hours, minutes] = time.split(':');
-          const scheduledTime = new Date(currentDate);
-          scheduledTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-
-          if (scheduledTime >= new Date(medication.startDate) && scheduledTime <= endDateTime) {
-            doses.push({
-              user: medication.user,
-              medication: medication._id,
-              scheduledTime,
-              status: 'scheduled'
-            });
-          }
-        }
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      await Dose.insertMany(doses);
-    } catch (error) {
-      console.error('Error scheduling medication doses:', error);
-      throw error;
-    }
-  }
+// --- Gmail SMTP (nodemailer) ----------------------------------
+let gmailTransporter = null;
+function getGmailTransporter() {
+  if (gmailTransporter) return gmailTransporter;
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) return null;
+  gmailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_APP_PASSWORD,
+    },
+  });
+  return gmailTransporter;
 }
 
-// Create and export a singleton instance
-const reminderService = new ReminderService();
+async function sendViaGmail({ to, subject, text, html }) {
+  const tx = getGmailTransporter();
+  if (!tx) return false;
+  await tx.sendMail({
+    from: process.env.EMAIL_FROM || `MedTrack <${process.env.EMAIL_USER}>`,
+    to,
+    subject,
+    text,
+    html,
+  });
+  return true;
+}
 
-// Function to update dose statuses
-const updateDoseStatuses = async () => {
-  try {
-    const now = new Date();
-    const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60000); // 30 minutes ago
+// --- Resend (kept for future / alternate provider) ------------
+let resendClient = null;
+function getResend() {
+  if (resendClient) return resendClient;
+  if (!process.env.RESEND_API_KEY) return null;
+  resendClient = new Resend(process.env.RESEND_API_KEY);
+  return resendClient;
+}
 
-    // Find all scheduled doses that are past their time and not already marked as taken/late/missed
-    const doses = await Dose.find({
-      status: 'scheduled',
-      scheduledTime: { $lt: now }
-    }).populate('medication');
+async function sendViaResend({ to, subject, text, html }) {
+  const client = getResend();
+  if (!client) return false;
+  const from = process.env.RESEND_FROM_EMAIL || 'MedTrack <onboarding@resend.dev>';
+  const { error } = await client.emails.send({ from, to, subject, text, html });
+  if (error) throw new Error(error.message || JSON.stringify(error));
+  return true;
+}
 
-    let updatedCount = 0;
-    for (const dose of doses) {
-      const scheduledTime = new Date(dose.scheduledTime);
-      const timeDiff = now - scheduledTime;
-      const minutesLate = Math.floor(timeDiff / (1000 * 60));
+// Unified sender — picks the best available provider
+async function sendEmail({ to, subject, text, html }) {
+  if (process.env.RESEND_API_KEY) {
+    return sendViaResend({ to, subject, text, html });
+  }
+  if (process.env.EMAIL_USER && process.env.EMAIL_APP_PASSWORD) {
+    return sendViaGmail({ to, subject, text, html });
+  }
+  console.warn('No email provider configured — skipping send');
+  return false;
+}
 
-      // If the dose is more than 30 minutes late, mark it as missed
-      if (minutesLate > 30) {
-        dose.status = 'missed';
+// --- Email templates ------------------------------------------
+function buildReminderEmail(user, medication, scheduledTime) {
+  const time = scheduledTime.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  const dosage = medication.dosage ? ` (${medication.dosage})` : '';
+  return {
+    subject: `MedTrack reminder: ${medication.name} at ${time}`,
+    text: `Hi ${user.name},
+
+This is a reminder to take your ${medication.name}${dosage} at ${time}.
+
+— MedTrack`,
+    html: `<p>Hi ${user.name},</p>
+<p>This is a reminder to take <strong>${medication.name}${dosage}</strong> at <strong>${time}</strong>.</p>
+<p>— MedTrack</p>`,
+  };
+}
+
+async function sendReminderEmail(dose) {
+  const { user, medication, scheduledTime } = dose;
+  const { subject, text, html } = buildReminderEmail(user, medication, scheduledTime);
+  return sendEmail({ to: user.email, subject, text, html });
+}
+
+// --- Cron-driven dose checks ----------------------------------
+async function checkAndSendReminders() {
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MINUTES * 60_000);
+
+  const doses = await Dose.find({
+    status: 'scheduled',
+    scheduledTime: { $gte: now, $lte: windowEnd },
+    reminderSentAt: null,
+  })
+    .populate('medication')
+    .populate('user');
+
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const dose of doses) {
+    if (!dose.user || !dose.user.email || !dose.medication) continue;
+    if (dose.user.notificationsEnabled === false) {
+      skipped++;
+      continue;
+    }
+    try {
+      const ok = await sendReminderEmail(dose);
+      if (ok) {
+        dose.reminderSentAt = new Date();
         await dose.save();
-        updatedCount++;
-        console.log(`Marked dose as missed: ${dose.medication.name} scheduled for ${scheduledTime.toLocaleTimeString()}, ${minutesLate} minutes late`);
-      } else {
-        // If it's within 30 minutes, mark it as late
-        dose.status = 'late';
-        await dose.save();
-        updatedCount++;
-        console.log(`Marked dose as late: ${dose.medication.name} scheduled for ${scheduledTime.toLocaleTimeString()}, ${minutesLate} minutes late`);
+        sent++;
+      }
+    } catch (err) {
+      failed++;
+      console.error(`Failed to send reminder for dose ${dose._id}:`, err.message);
+    }
+  }
+
+  return { checked: doses.length, sent, skipped, failed };
+}
+
+async function updateDoseStatuses() {
+  const now = new Date();
+  const doses = await Dose.find({
+    status: 'scheduled',
+    scheduledTime: { $lt: now },
+  });
+
+  let updated = 0;
+  for (const dose of doses) {
+    const minutesLate = Math.floor((now - dose.scheduledTime) / 60_000);
+    dose.status = minutesLate > 30 ? 'missed' : 'late';
+    await dose.save();
+    updated++;
+  }
+  return { updated };
+}
+
+async function scheduleMedicationDoses(medication) {
+  const doses = [];
+  const currentDate = new Date(medication.startDate);
+  const endDateTime = new Date(medication.endDate);
+  const startDate = new Date(medication.startDate);
+
+  while (currentDate <= endDateTime) {
+    for (const time of medication.frequency.times) {
+      const [hours, minutes] = time.split(':');
+      const scheduledTime = new Date(currentDate);
+      scheduledTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+
+      if (scheduledTime >= startDate && scheduledTime <= endDateTime) {
+        doses.push({
+          user: medication.user,
+          medication: medication._id,
+          scheduledTime,
+          status: 'scheduled',
+        });
       }
     }
-
-    if (updatedCount > 0) {
-      console.log(`Updated ${updatedCount} dose statuses`);
-    }
-  } catch (error) {
-    console.error('Error updating dose statuses:', error);
+    currentDate.setDate(currentDate.getDate() + 1);
   }
-};
 
-// Run the update every minute
-setInterval(updateDoseStatuses, 60000);
+  if (doses.length) await Dose.insertMany(doses);
+  return doses.length;
+}
 
 module.exports = {
-  reminderService,
-  updateDoseStatuses
-}; 
+  checkAndSendReminders,
+  updateDoseStatuses,
+  scheduleMedicationDoses,
+  sendReminderEmail,
+  sendEmail,
+};
